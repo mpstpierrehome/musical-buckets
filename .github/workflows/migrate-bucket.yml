@@ -1,0 +1,71 @@
+name: S3 Bucket Migration Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration_step:
+        description: 'Migration step to execute'
+        required: true
+        default: 'validate'
+        type: choice
+        options:
+        - validate
+        - remove-source
+        - prepare-target
+        - import
+        - verify
+      bucket_name:
+        description: 'Bucket name to migrate'
+        required: true
+        type: string
+      source_stack:
+        description: 'Source stack name'
+        required: false
+        default: 'StackA'
+        type: string
+      target_stack:
+        description: 'Target stack name'
+        required: false
+        default: 'StackB'
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  migrate-bucket:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Install dependencies
+      run: |
+        npm ci
+        npm install -g aws-cdk
+        
+    - name: Execute Migration Step
+      run: |
+        chmod +x ./scripts/migrate-bucket.sh
+        ./scripts/migrate-bucket.sh "${{ github.event.inputs.migration_step }}" "${{ github.event.inputs.bucket_name }}" "${{ github.event.inputs.source_stack }}" "${{ github.event.inputs.target_stack }}"
+        
+    - name: Post-Step Summary
+      run: |
+        echo "## Migration Step: ${{ github.event.inputs.migration_step }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Bucket**: ${{ github.event.inputs.bucket_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Source Stack**: ${{ github.event.inputs.source_stack }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Target Stack**: ${{ github.event.inputs.target_stack }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: ✅ Completed" >> $GITHUB_STEP_SUMMARY
