@@ -1,9 +1,5 @@
-[
-  {
-    "LogicalResourceId": "ImportedStackABucket8D698012",
-    "ResourceType": "AWS::S3::Bucket",
-    "ResourceIdentifier": {
-      "BucketName": "stack-a-bucket-<ACCOUNT>-<REGION>"
-    }
+{
+  "ImportedStackABucket8D698012": {
+    "BucketName": "stack-a-bucket-AccountId-us-east-1"
   }
-]
+}
