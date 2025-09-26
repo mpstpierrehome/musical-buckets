@@ -48,58 +48,51 @@ cdk deploy StackB
 Populate the bucket with sample files for testing:
 
 ```bash
-# Get the bucket name from Stack A deployment output
-BUCKET_NAME="stack-a-bucket-<account>-<region>"
+# Auto-generate bucket name using current AWS account (recommended)
+node scripts/load-files.js
 
-# Load 5 sample files into the bucket
-node scripts/load-files.js $BUCKET_NAME
+# Or specify bucket name explicitly
+node scripts/load-files.js stack-a-bucket-<account>-<region>
 ```
 
 #### Step 3: Remove Bucket from Stack A
 
-1. **Comment out or remove** the bucket definition in `lib/stack-a.ts`:
-   ```typescript
-   // Comment out the entire bucket creation block
-   // this.bucket = new s3.Bucket(this, 'StackABucket', {
-   //   ...
-   // });
-   ```
+Deploy Stack A with the migration flag to remove bucket from its management:
 
-2. **Deploy Stack A** to remove bucket from its management:
-   ```bash
-   cdk deploy StackA
-   ```
+```bash
+# Remove bucket from Stack A management
+cdk deploy StackA --context migrateBucket=true
+```
 
-   ⚠️ **Important**: The bucket remains in AWS due to `RemovalPolicy.RETAIN` - only CloudFormation management is removed.
+⚠️ **Important**: The bucket remains in AWS due to `RemovalPolicy.RETAIN` - only CloudFormation management is removed.
 
 #### Step 4: Prepare Stack B for Import
 
-1. **Update `lib/stack-b.ts`** to define the bucket resource:
-   ```typescript
-   this.bucket = new s3.Bucket(this, 'ImportedStackABucket', {
-     bucketName: 'stack-a-bucket-<account>-<region>', // Use actual bucket name
-     versioned: true,
-     removalPolicy: cdk.RemovalPolicy.RETAIN,
-     autoDeleteObjects: false,
-   });
-   ```
+Deploy Stack B with the import flag to add bucket resource definition:
 
-2. **Synthesize Stack B** to verify configuration:
-   ```bash
-   cdk synth StackB
-   ```
+```bash
+# Prepare Stack B for import (adds bucket resource to template)
+cdk deploy StackB --context importBucket=true
+```
 
 #### Step 5: Import Bucket into Stack B
 
 Use CDK's import feature to transfer ownership:
 
+**Option A: Interactive Import (Recommended)**
 ```bash
-# Import the existing bucket into Stack B
-cdk import StackB
+# Import the existing bucket into Stack B (interactive)
+cdk import StackB --context importBucket=true
 
-# When prompted, confirm the import:
-# StackB/ImportedStackABucket/Resource (AWS::S3::Bucket): import with BucketName=stack-a-bucket-xxx-xxx-x
-# Type 'y' to confirm
+# When prompted, enter the bucket name:
+# StackB/ImportedStackABucket/Resource (AWS::S3::Bucket): enter BucketName
+# Type: stack-a-bucket-<your-account>-<your-region>
+```
+
+**Option B: Automated Import with Pipeline**
+```bash
+# For automation, use echo to pipe the bucket name
+echo "stack-a-bucket-<account>-<region>" | cdk import StackB --context importBucket=true
 ```
 
 #### Step 6: Verify Migration
@@ -116,7 +109,22 @@ aws cloudformation describe-stack-resources --stack-name StackA \
   --query 'StackResources[?ResourceType==`AWS::S3::Bucket`]'
 
 # Test bucket access and data integrity
-aws s3 ls s3://$BUCKET_NAME --recursive
+aws s3 ls s3://stack-a-bucket-$(aws sts get-caller-identity --query Account --output text)-$(aws configure get region || echo us-east-1) --recursive
+```
+
+#### Step 7: Cleanup (Optional)
+
+When you're done with the demo, use the cleanup script to remove all resources:
+
+```bash
+# Remove all resources (bucket contents, stacks, and bucket itself)
+./scripts/cleanup.sh
+
+# The script will:
+# 1. Empty the S3 bucket (with confirmation)
+# 2. Delete both CDK stacks
+# 3. Remove the bucket completely
+# 4. Clean up generated files
 ```
 
 ### Automated Migration
@@ -127,12 +135,39 @@ For production environments, use the automated migration script:
 # Make script executable
 chmod +x scripts/migrate-bucket.sh
 
+# Get your bucket name
+BUCKET_NAME="stack-a-bucket-$(aws sts get-caller-identity --query Account --output text)-$(aws configure get region || echo us-east-1)"
+
 # Run migration steps in sequence
 ./scripts/migrate-bucket.sh validate $BUCKET_NAME
 ./scripts/migrate-bucket.sh remove-source $BUCKET_NAME
 ./scripts/migrate-bucket.sh prepare-target $BUCKET_NAME
 ./scripts/migrate-bucket.sh import $BUCKET_NAME
 ./scripts/migrate-bucket.sh verify $BUCKET_NAME
+```
+
+### Quick Start Commands
+
+For a complete demo run from start to finish:
+
+```bash
+# 1. Deploy initial stacks
+cdk deploy StackA
+cdk deploy StackB
+
+# 2. Load sample data
+node scripts/load-files.js
+
+# 3. Migrate bucket from Stack A to Stack B
+cdk deploy StackA --context migrateBucket=true
+cdk deploy StackB --context importBucket=true
+echo "stack-a-bucket-$(aws sts get-caller-identity --query Account --output text)-$(aws configure get region || echo us-east-1)" | cdk import StackB --context importBucket=true
+
+# 4. Verify migration
+aws cloudformation describe-stack-resources --stack-name StackB --query 'StackResources[?ResourceType==`AWS::S3::Bucket`]'
+
+# 5. Clean up when done
+./scripts/cleanup.sh
 ```
 
 ### GitHub Actions Pipeline
@@ -156,17 +191,38 @@ For production deployments, use the included GitHub Actions workflow:
 - ✅ **Rollback**: Process can be reversed if needed
 - ✅ **Step-by-Step**: Each step can be executed and verified independently
 
+### Context Parameters
+
+The project uses CDK context parameters to control stack behavior:
+
+- **`migrateBucket=true`** - Tells Stack A to NOT create the bucket (for migration)
+- **`importBucket=true`** - Tells Stack B to create the bucket resource (for import)
+
+### Scripts Overview
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/load-files.js` | Loads 5 sample files into the S3 bucket |
+| `scripts/migrate-bucket.sh` | Automated migration script with step-by-step process |
+| `scripts/cleanup.sh` | Complete cleanup of all resources and data |
+
 ### Troubleshooting
 
 **Error: "Bucket already exists"**
-- This means you're trying to create a new bucket instead of importing. Use `Bucket.fromBucketName()` for referencing or follow the import process.
+- This means you're trying to create a new bucket instead of importing. Ensure you're using the context parameters correctly.
 
 **Error: "Access Denied"**
 - Ensure your AWS credentials have permissions for S3, CloudFormation, and CDK operations.
 
-**Import fails**
-- Verify the bucket name exactly matches between Stack A and Stack B definitions.
-- Ensure Stack A has been deployed without the bucket definition.
+**Import fails with "Unrecognized resource identifiers"**
+- Use interactive import instead of resource mapping file: `cdk import StackB --context importBucket=true`
+- Ensure the bucket name matches exactly what CDK expects.
+
+**Error: "Stack A has no bucket to migrate"**
+- Make sure you deployed Stack A initially without the `migrateBucket=true` context.
+
+**Cleanup script fails**
+- The script includes fallbacks and force options. Check AWS console if issues persist.
 
 ## Standard CDK Commands
 

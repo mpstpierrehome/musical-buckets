@@ -1,0 +1,9 @@
+[
+  {
+    "LogicalResourceId": "ImportedStackABucket8D698012",
+    "ResourceType": "AWS::S3::Bucket",
+    "ResourceIdentifier": {
+      "BucketName": "stack-a-bucket-<ACCOUNT>-<REGION>"
+    }
+  }
+]

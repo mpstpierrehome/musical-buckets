@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.896.0",
+    "@aws-sdk/client-sts": "^3.896.0",
     "aws-cdk-lib": "2.205.0",
     "constructs": "^10.0.0"
   }

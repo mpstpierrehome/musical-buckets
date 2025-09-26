@@ -138,10 +138,10 @@ prepare_target() {
 import_bucket() {
     log_info "Importing bucket into $TARGET_STACK..."
     
-    # Use CDK import with timeout
-    log_info "Starting CDK import process..."
-    timeout 300 bash -c "echo 'y' | cdk import $TARGET_STACK" || {
-        log_error "CDK import timed out or failed"
+    # Use CDK import with resource mapping (non-interactive)
+    log_info "Starting CDK import process with resource mapping..."
+    cdk import "$TARGET_STACK" --resource-mapping resource-mapping.json --context importBucket=true || {
+        log_error "CDK import failed"
         exit 1
     }
     
